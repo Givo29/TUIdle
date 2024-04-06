@@ -66,10 +66,11 @@ type Model struct {
 
 func checkGuess(game *game, guess string) Guess {
 	var g Guess
+	guess = strings.ToLower(guess)
 	g.Guess = guess
 
 	// Handle correct guess first
-	if game.Word == guess {
+	if strings.ToLower(game.Word) == guess {
 		g.Correct = true
 		g.CorrectLettersIndex = []int{0, 1, 2, 3, 4}
 		return g
@@ -274,8 +275,8 @@ func (m Model) View() string {
 			}
 			s += lipgloss.JoinHorizontal(lipgloss.Center, keys...)
 			s += "\n"
-
 		}
+
 	} else {
 		streak, _ := checkStreak(m.game.State, m.lastGame.Streak, m.lastGame.Date, m.game.Date)
 		s += fmt.Sprintf("Your current streak is %d\n", streak)
