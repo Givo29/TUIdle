@@ -64,29 +64,6 @@ type Model struct {
 	inputStyle lipgloss.Style
 }
 
-func (game *game) makeGuess(guess string) {
-	var g Guess
-
-	// Handle correct guess first
-	if game.Word == guess {
-		g.Correct = true
-		g.CorrectLettersIndex = []int{0, 1, 2, 3, 4}
-		game.Guesses = append(game.Guesses, g)
-		return
-	}
-
-	// Handle incorrect guess
-	for i, l := range guess {
-		if l == rune(game.Word[i]) {
-			g.CorrectLettersIndex = append(g.CorrectLettersIndex, i)
-		} else if slices.Contains(strings.Split(game.Word, ""), string(l)) {
-			g.IncorrectLettersIndex = append(g.IncorrectLettersIndex, i)
-			game.UsedLetters = append(game.UsedLetters, string(l))
-		}
-	}
-	game.Guesses = append(game.Guesses, g)
-}
-
 func checkGuess(game *game, guess string) Guess {
 	var g Guess
 	g.Guess = guess
@@ -236,7 +213,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputStyle = validInputStyle
 
 			if len(m.game.Guesses) < m.maxTries {
-				// m.game.makeGuess(m.guessInput.Value())
 				m.game.Guesses = append(m.game.Guesses, checkGuess(&m.game, m.guessInput.Value()))
 				m.guessInput.SetValue("")
 			}
