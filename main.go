@@ -20,9 +20,10 @@ import (
 //go:embed words.txt
 var wordsString string
 
-var incorrectLetterStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
-var incorrectPositionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ff8100")).Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("#ff8100")).Padding(0, 1)
-var correctStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("#04B575")).Padding(0, 1)
+var whiteKeyStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
+var orangeKeyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ff8100")).Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("#ff8100")).Padding(0, 1)
+var greenKeyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("#04B575")).Padding(0, 1)
+var greyKeyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("#666666")).Padding(0, 1)
 var validInputStyle = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).Width(25)
 var invalidInputStyle = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("#ff0000")).Width(25)
 
@@ -42,11 +43,12 @@ const (
 )
 
 type game struct {
-	Date    string `json:"date"`
-	Word    string
-	State   PlayerState `json:"state"`
-	Guesses []Guess     `json:"guesses"`
-	Streak  int         `json:"streak"`
+	Date        string `json:"date"`
+	Word        string
+	State       PlayerState `json:"state"`
+	Guesses     []Guess     `json:"guesses"`
+	Streak      int         `json:"streak"`
+	UsedLetters []string    `json:"usedLetters"`
 }
 
 type Model struct {
@@ -56,17 +58,41 @@ type Model struct {
 	lastGame game
 	words    []string
 	maxTries int
+	keyboard [][]string
 
 	guessInput textinput.Model
 	inputStyle lipgloss.Style
 }
 
-func checkGuess(word, guess string) Guess {
+func (game *game) makeGuess(guess string) {
+	var g Guess
+
+	// Handle correct guess first
+	if game.Word == guess {
+		g.Correct = true
+		g.CorrectLettersIndex = []int{0, 1, 2, 3, 4}
+		game.Guesses = append(game.Guesses, g)
+		return
+	}
+
+	// Handle incorrect guess
+	for i, l := range guess {
+		if l == rune(game.Word[i]) {
+			g.CorrectLettersIndex = append(g.CorrectLettersIndex, i)
+		} else if slices.Contains(strings.Split(game.Word, ""), string(l)) {
+			g.IncorrectLettersIndex = append(g.IncorrectLettersIndex, i)
+			game.UsedLetters = append(game.UsedLetters, string(l))
+		}
+	}
+	game.Guesses = append(game.Guesses, g)
+}
+
+func checkGuess(game *game, guess string) Guess {
 	var g Guess
 	g.Guess = guess
 
 	// Handle correct guess first
-	if word == guess {
+	if game.Word == guess {
 		g.Correct = true
 		g.CorrectLettersIndex = []int{0, 1, 2, 3, 4}
 		return g
@@ -74,10 +100,12 @@ func checkGuess(word, guess string) Guess {
 
 	// Handle incorrect guess
 	for i, l := range guess {
-		if l == rune(word[i]) {
+		if l == rune(game.Word[i]) {
 			g.CorrectLettersIndex = append(g.CorrectLettersIndex, i)
-		} else if slices.Contains(strings.Split(word, ""), string(l)) {
+		} else if slices.Contains(strings.Split(game.Word, ""), string(l)) {
 			g.IncorrectLettersIndex = append(g.IncorrectLettersIndex, i)
+		} else if !slices.Contains(game.UsedLetters, string(l)) {
+			game.UsedLetters = append(game.UsedLetters, string(l))
 		}
 	}
 
@@ -102,10 +130,7 @@ func saveGameToFile(m Model) {
 	var games []game
 	var currentGame game
 
-	file, err := os.ReadFile(fmt.Sprintf("%s/.tuidle.json", os.Getenv("HOME")))
-	if err != nil {
-		fmt.Println(err)
-	}
+	file, _ := os.ReadFile(fmt.Sprintf("%s/.tuidle.json", os.Getenv("HOME")))
 	json.Unmarshal([]byte(file), &games)
 
 	// Either use the last result or make new one
@@ -120,6 +145,7 @@ func saveGameToFile(m Model) {
 	}
 
 	currentGame.State = m.game.State
+	currentGame.UsedLetters = m.game.UsedLetters
 	currentGame.Guesses = m.game.Guesses
 
 	streak, err := checkStreak(currentGame.State, m.lastGame.Streak, m.lastGame.Date, m.game.Date)
@@ -210,7 +236,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputStyle = validInputStyle
 
 			if len(m.game.Guesses) < m.maxTries {
-				m.game.Guesses = append(m.game.Guesses, checkGuess(m.game.Word, m.guessInput.Value()))
+				// m.game.makeGuess(m.guessInput.Value())
+				m.game.Guesses = append(m.game.Guesses, checkGuess(&m.game, m.guessInput.Value()))
 				m.guessInput.SetValue("")
 			}
 			m.game.State = checkPlayerState(m.game.Guesses, m.maxTries)
@@ -244,11 +271,11 @@ func (m Model) View() string {
 		var letters []string
 		for i, l := range g.Guess {
 			if slices.Contains(g.CorrectLettersIndex, i) {
-				letters = append(letters, correctStyle.Render(fmt.Sprintf("%s", string(l))))
+				letters = append(letters, greenKeyStyle.Render(fmt.Sprintf("%s", string(l))))
 			} else if slices.Contains(g.IncorrectLettersIndex, i) {
-				letters = append(letters, incorrectPositionStyle.Render(fmt.Sprintf("%s", string(l))))
+				letters = append(letters, orangeKeyStyle.Render(fmt.Sprintf("%s", string(l))))
 			} else {
-				letters = append(letters, incorrectLetterStyle.Render(fmt.Sprintf("%s", string(l))))
+				letters = append(letters, whiteKeyStyle.Render(fmt.Sprintf("%s", string(l))))
 			}
 		}
 
@@ -258,6 +285,21 @@ func (m Model) View() string {
 
 	if m.game.State == Playing {
 		s += m.inputStyle.Render(m.guessInput.View())
+		s += "\n\n"
+		for _, row := range m.keyboard {
+			var keys []string
+
+			for _, key := range row {
+				if slices.Contains(m.game.UsedLetters, strings.ToLower(key)) {
+					keys = append(keys, greyKeyStyle.Render(key))
+				} else {
+					keys = append(keys, whiteKeyStyle.Render(key))
+				}
+			}
+			s += lipgloss.JoinHorizontal(lipgloss.Center, keys...)
+			s += "\n"
+
+		}
 	} else {
 		streak, _ := checkStreak(m.game.State, m.lastGame.Streak, m.lastGame.Date, m.game.Date)
 		s += fmt.Sprintf("Your current streak is %d\n", streak)
@@ -287,6 +329,8 @@ func main() {
 
 	words := strings.Split(wordsString, "\n")
 
+	keyboard := [][]string{{"Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"}, {"A", "S", "D", "F", "G", "H", "J", "K", "L"}, {"Z", "X", "C", "V", "B", "N", "M"}}
+
 	// Seed random generator with date and generate random word index
 	year, month, day := currentTime.Date()
 	date := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
@@ -305,6 +349,7 @@ func main() {
 		maxTries:   6,
 		guessInput: textInput,
 		inputStyle: validInputStyle,
+		keyboard:   keyboard,
 	}
 
 	if currentGame.Date == time.Now().Format("2006-01-02") {
